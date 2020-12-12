@@ -1,0 +1,16 @@
+<network>
+  <name>nat1</name>
+  <uuid>52981c3c-2d99-4f04-b7cb-9c3933d7f5e4</uuid>
+  <forward mode='nat1'>
+    <nat1>
+      <port start='1024' end='65535'/>
+    </nat1>
+  </forward>
+  <bridge name='virbr2' stp='on' delay='0'/>
+  <ip address='192.168.9.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='192.168.9.2' end='192.168.9.254'/>
+    </dhcp>
+  </ip>
+</network>
+

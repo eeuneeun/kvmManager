@@ -1,0 +1,188 @@
+#!/bin/sh
+
+# declare
+
+# @1. 전역변수 URL
+
+# 	- controllerURL : 페이지 이동 및 관련 컨트롤러 파일 저장 폴더 경로
+controllerURL="./controller"
+
+#	@ 1-1. URL For vnet
+#	- vnetURL : vnet 관련 파일들이 모여 있는 폴더 경로
+# 	- vnetFilesURL : vnet 관련된 작업을 하는데 쓰이는 파일들이 모여 있는 폴더 경로
+vnetURL="./vnet"
+vnetFilesURL="$vnetURL/vnetFiles"
+
+#	@ 1-2. URL For vpc
+#	- vpcURL : vpc 관련 파일들이 모여 있는 폴더 경로
+#	- vpcImgURL :  이미지 파일들이 모여 있는 폴더 경로
+#	- diskURL : vpc 설치용 디스크 파일들이 모여 있는 폴더 경로
+# 	- vpcFilesURL : vpc 관련된 작업을 하는데 쓰이는 파일들이 모여 있는 폴더 경로
+vpcURL="./vpc"
+vpcImgURL="$vpcURL/cloudImg"
+vpcDiskURL="$vpcURL/cloudDisk"
+vpcFilesURL="$vpcURL/vpcFiles"
+
+#	@ 1-3. URL For dbpool
+#	- dbpoolURL : db 접근 관련 파일들이 모여 있는 폴더 경로
+dbpoolURL="./dbpool"
+
+# @ 2. 전역변수 List
+
+#	@ 2-1. List For vnet
+# 	- vnetListFile : vnet 리스트를 담는 용도
+# 	- vnetListForView : vnet 리스트 생성 용도의 파일
+# 	- vnetListArray : vnet 리스트를 담을 배열
+vnetListFile="vnetList.txt"
+vnetListForView="list.txt"
+vnetListArray=""
+
+#	@ 2-2. List For vpc
+# 	- vpcListFile : vpc 리스트를 담는 용도
+# 	- vpcListForView : vpc 리스트 생성 용도의 파일
+# 	- vpctListArray : vpc 리스트를 담을 배열
+vpcListFile="vpcList.txt"
+vpcListForView="list.txt"
+vpcListArray=""
+
+# @ 3. 가상 컴퓨서 생성 관련 변수
+
+#	- newCName : 
+newCName=""
+diskSize=""
+cpuNum=""
+ramSize=""
+flag=1
+
+# @ 4. Global Variable For Util
+
+#	@ 4-1. 숫자 관련 변수
+#	- timeStamp : 현재 시간 리턴 값
+#	- isNum : 리턴 값이 숫자인지 확인하는 용도의 정규식
+timeStamp=$(date +%y%m%d%I%M%S)
+isNum='^[0-9]+$'
+
+#	@ 4-2. zenity 페이지 이동 관련 변수
+#	- selectNum : 직전 zenity 함수에서 선택된 번호를 담는 용도
+# 	- newFileName : 직전에 새로 생성된 파일명을 담는 용도
+# 	- delFileName : 곧 삭제할 파일명을 담는 용도
+selectNum=""
+newFileName=""
+delFileName=""
+
+# @ 5. zenity GUI Call Fucntion Abstraction
+
+# 	@ 5-1. GUI 자원 호출 함수
+#	- $1 : 선택창 상단의 title
+#	- $2 ~ $#-1 : 옵션으로 제공하고자 하는 menu list
+#	- $# : 종료
+dialogCall(){
+	title=$1
+	local menuArray=($(echo "$@"))
+
+	menuCallString="zenity --list --title \"$1\" --column \"선택\" --column \"관리항목\""
+	temp=""
+
+	for ((i=1;i<$#;i++))
+	do
+		temp="$temp $[$i] \"${menuArray[$i]}\""
+	done
+		menuCallString="$menuCallString$temp"
+		
+	echo $menuCallString > $controllerURL/menuCall.sh
+	chmod +x $controllerURL/menuCall.sh
+	selectNum=$($controllerURL/menuCall.sh)
+}
+
+#	@ 5-2. vnet과 vpc 목록 업데이트 함수  
+#	vnet : vnet/vnetFiles/list.txt 파일에 저장
+#	vpc  : vpc/vpcFiles/list.txt 파일에 저장
+vListUpdate(){
+	local listType=$1
+	if [ "$listType" == "vnet" ]
+	then 
+		virsh net-list --all > $vnetFilesURL/$vnetListFile
+	elif [ "$listType" == "vpc" ]
+	then
+		virsh list --all > $vpcFilesURL/$vpcListFile
+	fi 
+}
+
+# @ 6. 가상네트워크 관련 함수
+
+# 	@ 6-1. 가상 네트워크 리스트 랜더링
+vnetListView(){
+	title=$1
+	vnetListArray=($title)
+	awk '{if($1!~/Name/ && $1!~/-/)print $1}' $vnetFilesURL/$vnetListFile > $vnetFilesURL/$vnetListForView
+	vnetListArray+=(`cat $vnetFilesURL/$vnetListForView`)
+}
+
+# 	@ 6-2. 가상 네트워크 상세정보 랜더링
+vnetXmlView(){
+	local fileName=$1
+	zenity --width=800 --height=600 --title "세부내용"  --text-info --filename="$fileName"
+}
+
+#	@ 6-3. 가상 네트워크 추가
+# 	- Virsh 를 이용하여 가상 네트워크 생성
+#	- $1 : nat || isolated 
+vnetAdd(){
+	local type=$1
+	newFileName=$(echo $type$timeStamp.xml)
+	virsh net-dumpxml default > $vnetFilesURL/$newFileName
+	
+	sed -i "s/<name>default<\/name>/<name>$type$timeStamp<\/name>/g" $vnetFilesURL/$newFileName
+	sed -i "s/<bridge name='virbr0'/<bridge name='$timeStamp'/g" $vnetFilesURL/$newFileName
+	sed -i "/<uuid>/d" $vnetFilesURL/$newFileName
+	sed -i "/mac/d" $vnetFilesURL/$newFileName
+	
+	if [ "$type" == "isolated" ]
+	then		
+		sed -i "/ip/d" $vnetFilesURL/$newFileName
+		sed -i "/dhcp/d" $vnetFilesURL/$newFileName
+		sed -i "/forward/d" $vnetFilesURL/$newFileName
+		sed -i "/port/d" $vnetFilesURL/$newFileName
+		sed -i "/range/d" $vnetFilesURL/$newFileName
+		sed -i "/nat>/d" $vnetFilesURL/$newFileName
+	
+	fi
+
+	virsh net-define $vnetFilesURL/$newFileName
+  	systemctl restart libvirtd
+  	virsh net-start $type$timeStamp 
+ 	virsh net-autostart $type$timeStamp
+}
+
+#	@ 6-4. 가상 네트워크 삭제
+# 	- Virsh 를 이용하여 가상 네트워크 등록해제
+#	- $1 : delete file name
+vnetDel(){
+	delFileName=$*
+	virsh net-destroy $delFileName
+	virsh net-undefine $delFileName
+	vListUpdate vnet
+	vnetListView $vnetFilesURL/$vnetListFile
+}
+
+
+# @ 7. 가상 컴퓨터 관련 함수
+
+# 	@ 7-1.가상 컴퓨터 리스트 랜더링
+vpcListView(){
+	title=$1
+	vpcListArray=($title)
+	awk '{if($1!~/Name/ && $1!~/-/)print $1}' $vpcFilesURL/$vpcListFile > $vpcFilesURL/$vpcListForView
+	vpcListArray+=(`cat $vpcFilesURL/$vpcListForView`)
+}
+
+
+
+#	@가상 머신 추가
+# 	- Virsh 를 이용하여 가상 네트워크 생성
+vpcAdd(){
+	echo "not ready"
+}
+
+
+
