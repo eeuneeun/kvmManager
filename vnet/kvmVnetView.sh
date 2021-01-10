@@ -11,11 +11,11 @@ vnetListView $viewTitle
 while [ $temp ]
 do
 	dialogCall ${vnetListArray[*]}
-	if [ -n $selectNum ]
+	if [ -n $selectNum ] && [[ $selectNum =~ $isNum ]]
 	then
-		vnetXmlView $vnetFilesURL/${vnetListArray[$selectNum]}.xml	
-		
+		vnetXmlView $vnetFilesURL/${vnetListArray[$selectNum]}.xml
 	else
 		temp=0
+		exit
 	fi
 done
