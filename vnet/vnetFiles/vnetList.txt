@@ -1,5 +1,6 @@
  Name                 State      Autostart     Persistent
 ----------------------------------------------------------
  default              active     yes           yes
- isolated201209045913 active     yes           yes
+ isolated210109121705 active     yes           yes
+ nat                  active     no            no
 

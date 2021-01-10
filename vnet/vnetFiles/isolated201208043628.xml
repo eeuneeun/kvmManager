@@ -1,5 +1,0 @@
-<network>
-  <name>isolated201208043628</name>
-  <bridge name='201208043628' stp='on' delay='0'/>
-</network>
-

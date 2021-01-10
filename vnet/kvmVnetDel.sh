@@ -3,12 +3,11 @@
 
 . ./kvmLib
 
-temp=1
 delTitle="삭제할네트워크선택"
 vListUpdate vnet
 vnetListView $delTitle
 
-while [ $temp ]
+while [ 1 ]
 do
 	dialogCall ${vnetListArray[*]}
 	if [ -n $selectNum ] && [[ $selectNum =~ $isNum ]]
@@ -16,8 +15,8 @@ do
 		vnetDel	${vnetListArray[$selectNum]}	
 		vListUpdate vnet
 		vnetListView $delTitle
+		dialogCall ${vnetListArray[*]}
 	else
-		temp=0	
-		
+		exit
 	fi
 done

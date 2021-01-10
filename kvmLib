@@ -70,6 +70,11 @@ selectNum=""
 newFileName=""
 delFileName=""
 
+#	@ 4-3. DB 접속 관련 변수
+MYSQL=$(which mysql)
+DBConnect="$MYSQL kvm -u root -ptest123"
+
+
 # @ 5. zenity GUI Call Fucntion Abstraction
 
 # 	@ 5-1. GUI 자원 호출 함수
@@ -102,9 +107,11 @@ vListUpdate(){
 	if [ "$listType" == "vnet" ]
 	then 
 		virsh net-list --all > $vnetFilesURL/$vnetListFile
+		vnetListArray=""
 	elif [ "$listType" == "vpc" ]
 	then
 		virsh list --all > $vpcFilesURL/$vpcListFile
+		vpcListArray=""
 	fi 
 }
 
@@ -145,7 +152,40 @@ vnetAdd(){
 		sed -i "/port/d" $vnetFilesURL/$newFileName
 		sed -i "/range/d" $vnetFilesURL/$newFileName
 		sed -i "/nat>/d" $vnetFilesURL/$newFileName
-	
+	elif [ "$type" == "nat" ]
+	then
+		echo $type
+		
+		#사용할 네트워크의 IP 대역대 선택
+		menuArray=("네트워크의IP대역대선택" "10.0.0.0~10.255.255.255" "172.16.0.0~172.31.255.255" "192.168.0.0~192.168.255.255")
+		dialogCall ${menuArray[*]}
+		
+			case $selectNum in 
+			1)	#A Class : 10.0.0.0 ~ 10.255.255.255
+				natClass="A";;
+					
+			2)	#B class : 172.16.0.0 ~ 172.31.255.255
+				natClass="B";;
+
+			3)	#C class : 192.168.0.0 ~ 192.168.255.255
+				natClass="C";;
+		
+			*)	#종료
+				break;;
+			esac
+		
+		#사용할 IP 입력
+		natIp=$(zenity --forms --title="NAT NETWORK IP 주소" --text="사용할 IP 주소를 입력하세요!"  --add-entry="")	
+		
+		#DB에 저장
+		$dbpoolURL/dbInsert.sh $type$timeStamp $natIp $type $natClass
+		
+
+		#xml 파일에 nat 정보 반영
+		sed -i "s/<ip address='192.168.122.1'/<ip address='$natIp'/g" $vnetFilesURL/$newFileName
+		sed -i "/dhcp/d" $vnetFilesURL/$newFileName
+		sed -i "/range/d" $vnetFilesURL/$newFileName
+		
 	fi
 
 	virsh net-define $vnetFilesURL/$newFileName
@@ -163,25 +203,84 @@ vnetDel(){
 	virsh net-undefine $delFileName
 	vListUpdate vnet
 	vnetListView $vnetFilesURL/$vnetListFile
+
+	#DB에서 해당 네트워크 삭제
+	$dbpoolURL/dbDel.sh $type$timeStamp
 }
 
 
-# @ 7. 가상 컴퓨터 관련 함수
+# @ 7. 가상 머신 관련 함수
 
-# 	@ 7-1.가상 컴퓨터 리스트 랜더링
+# 	@ 7-1.가상 머신 리스트 랜더링
 vpcListView(){
 	title=$1
 	vpcListArray=($title)
-	awk '{if($1!~/Name/ && $1!~/-/)print $1}' $vpcFilesURL/$vpcListFile > $vpcFilesURL/$vpcListForView
+	awk '{if($2!~/Name/ && $2!~/-/)print $2}' $vpcFilesURL/$vpcListFile > $vpcFilesURL/$vpcListForView
 	vpcListArray+=(`cat $vpcFilesURL/$vpcListForView`)
+	echo $vpcListArray
 }
 
 
 
-#	@가상 머신 추가
-# 	- Virsh 를 이용하여 가상 네트워크 생성
-vpcAdd(){
-	echo "not ready"
+#	@가상 머신 삭제
+# 	- Virsh 를 이용하여 가상 머신 삭제
+vpcDel(){
+	delFileName="$*"
+	virsh destroy $delFileName
+	virsh undefine $delFileName
+	delFileName=""
+
+	vListUpdate vpc
+	vpcListView $vpctFilesURL/$vpcListFile
+
+}
+
+
+# 	@ 6-2. 가상 머신 상세정보 랜더링
+vpcControl(){
+	local vpcName=$1
+	
+	menuArray=("가상머신상세정보" "가상머신실행 " "가상머신중지" "네트워크할당" "가상머신GUI접속")
+	dialogCall ${menuArray[*]}
+	
+	case $selectNum in 
+		1)	#가상 머신 실행 
+				
+			echo $vpcName
+			virsh start $vpcName;;
+
+		2)	#가상 머신 중지
+			
+			echo $vpcName
+			virsh shutdown $vpcName;;
+
+		
+		3)	#네트워크할당
+			
+			viewTitle="가상네트워크리스트"
+			vListUpdate vnet
+			vnetListView $viewTitle
+			dialogCall ${vnetListArray[*]}
+
+			if [ -n $selectNum ] && [[ $selectNum =~ $isNum ]]
+			then
+				ventName=${vnetListArray[$selectNum]}
+			else
+				exit
+			fi
+
+			virsh attach-interface --domain $vpcName --source $vnetName --type network --model virtio --config --live;;
+
+			
+		4)	#가상머신GUI접속
+				
+			virt-viewer -c qemu:///system $vpcName &;;
+
+		*)	#종료
+
+			break;;
+		esac
+
 }
 
 
